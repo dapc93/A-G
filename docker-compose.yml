@@ -1,0 +1,57 @@
+version: "3.9"
+
+# Para desarrollo local. En produccion (VPS compartido con Orbit GPS) se usa
+# systemd + nginx del host en vez de este compose — ver DEPLOY.md.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ag_crm
+      POSTGRES_USER: ${POSTGRES_USER:-ag_crm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ag_crm}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - ag_crm_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ag_crm} -d ag_crm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-ag_crm}:${POSTGRES_PASSWORD:-ag_crm}@postgres:5432/ag_crm
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-solo-para-desarrollo-local}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-jwt-secret-key-solo-para-desarrollo-local}
+      APP_ENV: development
+      DEBUG: "true"
+      ALLOWED_ORIGINS: http://localhost:3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+
+volumes:
+  ag_crm_postgres_data:
